@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func UpdateProductHandler(w http.ResponseWriter, r *http.Request) {
@@ -28,8 +29,6 @@ func UpdateProductHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	print(productID)
-
 	var updatedProduct domain.Product
 	err = json.NewDecoder(r.Body).Decode(&updatedProduct)
 	if err != nil {
@@ -40,12 +39,22 @@ func UpdateProductHandler(w http.ResponseWriter, r *http.Request) {
 	repo := infraestructure.NewMySQLRepository()
 	useCase := aplication.NewUpdateProduct(repo)
 
-	err = useCase.Execute(productID, &updatedProduct)
-	if err != nil {
-		http.Error(w, "Error al actualizar el producto", http.StatusInternalServerError)
-		return
-	}
+	// Implementación de long polling
+	timeout := time.After(30 * time.Second)
+	tick := time.Tick(1 * time.Second)
 
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("Producto actualizado correctamente"))
+	for {
+		select {
+		case <-timeout:
+			http.Error(w, "Tiempo de espera agotado", http.StatusRequestTimeout)
+			return
+		case <-tick:
+			err = useCase.Execute(productID, &updatedProduct)
+			if err == nil {
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte("Producto actualizado correctamente"))
+				return
+			}
+		}
+	}
 }
