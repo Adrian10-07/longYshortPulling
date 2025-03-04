@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 )
 
 func UpdatePetHandler(w http.ResponseWriter, r *http.Request) {
@@ -21,10 +22,7 @@ func UpdatePetHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-
-
 	idPet := pathParts[2]
-
 
 	var updatedPet domain.Pet
 	err := json.NewDecoder(r.Body).Decode(&updatedPet)
@@ -33,15 +31,25 @@ func UpdatePetHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	repo := infraestructure.NewMySQLRepository()  
+	repo := infraestructure.NewMySQLRepository()
 	useCase := aplication.NewEditPet(repo)
 
-	err = useCase.Execute(idPet, &updatedPet)
-	if err != nil {
-		http.Error(w, "Error al actualizar la mascota", http.StatusInternalServerError)
-		return
-	}
+	// Implementación de long polling
+	timeout := time.After(30 * time.Second)
+	tick := time.Tick(1 * time.Second) 
 
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("Mascota actualizada correctamente"))
+	for {
+		select {
+		case <-timeout:
+			http.Error(w, "Tiempo de espera agotado", http.StatusRequestTimeout)
+			return
+		case <-tick:
+			err = useCase.Execute(idPet, &updatedPet)
+			if err == nil {
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte("Mascota actualizada correctamente"))
+				return
+			}
+		}
+	}
 }
